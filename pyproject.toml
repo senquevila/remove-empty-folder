@@ -1,0 +1,23 @@
+[project]
+name = "remove-empty-folder"
+version = "0.1.0"
+description = "TUI app to find and remove directories that contain no real files"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["textual>=0.47"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+remove-empty-folder = "remove_empty_folder.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
