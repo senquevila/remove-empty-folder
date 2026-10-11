@@ -11,7 +11,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, SelectionList, Static
+from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, SelectionList, Static
 from textual.widgets.selection_list import Selection
 
 from .config import IGNORED_EXTENSIONS
@@ -60,14 +60,18 @@ class RemoveEmptyFolderApp(App):
     """
     BINDINGS = [
         Binding("s", "scan", "Scan"),
+        Binding("r", "toggle_recursive", "Recursive"),
         Binding("a", "select_all", "Select all"),
         Binding("n", "select_none", "Select none"),
         Binding("d", "delete", "Delete selected"),
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, root: str | Path = ".", dry_run: bool = False) -> None:
+    def __init__(
+        self, root: str | Path = ".", dry_run: bool = False, recursive: bool = True
+    ) -> None:
         super().__init__()
+        self.recursive = recursive
         self.root = Path(root).expanduser().resolve()
         self.dry_run = dry_run
         self.candidates: list[Candidate] = []
@@ -78,6 +82,7 @@ class RemoveEmptyFolderApp(App):
         yield Header()
         with Horizontal(id="top"):
             yield Input(str(self.root), placeholder="Directory to scan", id="path")
+            yield Checkbox("Recursive", self.recursive, id="recursive")
             yield Button("Scan", variant="primary", id="scan")
         yield Static(id="summary")
         with Horizontal(id="main"):
@@ -101,10 +106,18 @@ class RemoveEmptyFolderApp(App):
         self.root = Path(self.query_one("#path", Input).value).expanduser().resolve()
         self.query_one("#summary", Static).update(f"Scanning {self.root} …")
         self.query_one("#candidates", SelectionList).clear_options()
-        self.run_scan(self.root)
+        self.recursive = self.query_one("#recursive", Checkbox).value
+        self.run_scan(self.root, self.recursive)
+
+    def action_toggle_recursive(self) -> None:
+        self.query_one("#recursive", Checkbox).toggle()
+
+    @on(Checkbox.Changed, "#recursive")
+    def _recursive_changed(self) -> None:
+        self.action_scan()
 
     @work(thread=True, exclusive=True)
-    def run_scan(self, root: Path) -> None:
+    def run_scan(self, root: Path, recursive: bool) -> None:
         last = 0.0
 
         def progress(path: Path, done: int, total: int, seen: int) -> None:
@@ -116,7 +129,7 @@ class RemoveEmptyFolderApp(App):
             self.call_from_thread(self._set_summary, self._progress_line(path, done, total, seen))
 
         try:
-            result = scan(root, progress=progress)
+            result = scan(root, progress=progress, recursive=recursive)
         except (OSError, NotADirectoryError) as exc:
             self.call_from_thread(self._set_summary, f"[red]Error:[/] {exc}")
             return

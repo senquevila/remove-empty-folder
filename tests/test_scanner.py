@@ -60,3 +60,12 @@ def test_scan_reports_progress(tmp_path):
     calls = []
     scan(tmp_path, progress=lambda p, d, t, s: calls.append((p.name, d, t, s)))
     assert calls[-1][1:] == (2, 2, 4)  # 2/2 top-level done, 4 dirs seen incl. root
+
+
+def test_scan_non_recursive_only_reports_direct_children(tmp_path):
+    (tmp_path / "empty" / "nested").mkdir(parents=True)  # whole subtree empty
+    touch(tmp_path / "full" / "real.txt")
+    (tmp_path / "full" / "deep_empty").mkdir()
+    names = lambda r: [c.path.name for c in scan(tmp_path, recursive=r)]
+    assert names(True) == ["empty", "deep_empty"]
+    assert names(False) == ["empty"]

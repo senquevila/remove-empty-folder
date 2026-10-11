@@ -38,12 +38,16 @@ def _visit(
     found: list[Candidate],
     is_root: bool,
     on_dir: Callable[[Path], None] | None = None,
+    recursive: bool = True,
 ) -> Candidate | None:
     """Walk ``directory``; return a Candidate if it is removable.
 
     Removable children of a non-removable directory are appended to ``found``,
-    so only the top-most removable directories are reported.
+    so only the top-most removable directories are reported. With
+    ``recursive=False`` only root's direct children can be reported, so a
+    non-root directory stops walking at its first real content.
     """
+    stop_early = not (recursive or is_root)
     if on_dir:
         on_dir(directory)
     removable = True
@@ -57,20 +61,26 @@ def _visit(
         return None  # unreadable: never touch it
 
     for entry in entries:
+        if stop_early and not removable:
+            return None
         if entry.is_symlink():
             removable = False  # never follow or delete through symlinks
             continue
         if entry.is_dir(follow_symlinks=False):
-            child = _visit(Path(entry.path), extensions, found, False, on_dir)
+            child = _visit(Path(entry.path), extensions, found, False, on_dir, recursive)
             if child is None:
                 removable = False
             else:
                 children.append(child)
+        elif not removable:
+            continue  # already has real content; only subdirs still matter
         elif is_ignorable(entry.name, extensions):
             ignored.append(Path(entry.path))
         else:
             removable = False
 
+    if stop_early and not removable:
+        return None
     if removable and not is_root:
         for child in children:
             ignored.extend(child.ignored_files)
@@ -85,8 +95,11 @@ def scan(
     root: str | Path,
     extensions: tuple[str, ...] = IGNORED_EXTENSIONS,
     progress: Callable[[Path, int, int, int], None] | None = None,
+    recursive: bool = True,
 ) -> list[Candidate]:
     """Return the top-most removable directories under ``root`` (root excluded).
+
+    With ``recursive=False`` only root's direct subdirectories are reported.
 
     ``progress(current_dir, top_done, top_total, dirs_seen)`` is called for every
     directory visited. Progress is measured over root's direct subdirectories,
@@ -111,7 +124,7 @@ def scan(
             progress(path, done, total, seen)
 
     found: list[Candidate] = []
-    _visit(root, tuple(extensions), found, True, on_dir)
+    _visit(root, tuple(extensions), found, True, on_dir, recursive)
     return sorted(found, key=lambda c: str(c.path).lower())
 
 
@@ -120,7 +133,7 @@ def is_removable(path: str | Path, extensions: tuple[str, ...] = IGNORED_EXTENSI
     path = Path(path)
     if path.is_symlink() or not path.is_dir():
         return False
-    return _visit(path, tuple(extensions), [], is_root=False) is not None
+    return _visit(path, tuple(extensions), [], False, recursive=False) is not None
 
 
 def remove(path: str | Path, extensions: tuple[str, ...] = IGNORED_EXTENSIONS) -> bool:
